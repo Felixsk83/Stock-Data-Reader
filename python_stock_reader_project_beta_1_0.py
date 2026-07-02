@@ -39,6 +39,8 @@ import matplotlib.pyplot as plt
 import yfinance as yf
 from datetime import datetime, date, timedelta
 import math
+import os
+from google.colab import files
 
 class Stock_Exchange_table:
 
@@ -50,9 +52,6 @@ class Stock_Exchange_table:
     try:
       self.start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
       self.end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
-
-      if self.start_date > self.end_date:
-        raise ValueError("Start date must be before end date!")
       if self.end_date > date.today():
         raise ValueError("End data cannot be in the future!")
 
@@ -393,7 +392,6 @@ end_date = input("Enter end date:")
 
 Stock_2024 = Stock_Exchange_table(stock_exchange_market,start_date,end_date)
 Stock_2024_data =Stock_2024.Stock_Exchange_data()
-#print(Stock_2024_data)
 
 if Stock_2024_data is not None:
   print(f"Successfully fetched {len(Stock_2024_data)} rows of data")
@@ -416,3 +414,121 @@ if Stock_2024_data is not None:
   print(Trend_Instance.data.info())
 else:
   print("Cannot proceed due to data fetching error. Please check your inputs.")
+
+excel_filename = f"{stock_exchange_market}_stock_data_{start_date}_to_{end_date}.xlsx"
+
+try:
+    df_to_save = Trend_Instance.data.copy()
+
+    if isinstance(df_to_save.get('SMA'), pd.DataFrame):
+        df_to_save['SMA'] = df_to_save['SMA'].values
+    if isinstance(df_to_save.get('EMA'), pd.DataFrame):
+        df_to_save['EMA'] = df_to_save['EMA'].values
+    if isinstance(df_to_save.get('Volatility'), pd.DataFrame):
+        df_to_save['Volatility'] = df_to_save['Volatility'].values
+
+    with pd.ExcelWriter(excel_filename, engine='openpyxl') as writer:
+        df_to_save.to_excel(writer, sheet_name='Stock Data', index=False)
+
+        summary_data = {
+            'Metric': [
+                'Ticker Symbol',
+                'Start Date',
+                'End Date',
+                'Total Trading Days',
+                'Start Price',
+                'End Price',
+                'Total Price Change',
+                'Price Change %',
+                'Highest Price',
+                'Lowest Price',
+                'Average Daily Return',
+                'Current RSI',
+                'Current Signal',
+                'Current Price Action'
+            ],
+            'Value': [
+                stock_exchange_market,
+                start_date,
+                end_date,
+                len(df_to_save),
+                f"${df_to_save['Close'].iloc[0]:.2f}",
+                f"${df_to_save['Close'].iloc[-1]:.2f}",
+                f"${df_to_save['Close'].iloc[-1] - df_to_save['Close'].iloc[0]:.2f}",
+                f"{((df_to_save['Close'].iloc[-1] - df_to_save['Close'].iloc[0]) / df_to_save['Close'].iloc[0] * 100):.2f}%",
+                f"${df_to_save['Close'].max():.2f}",
+                f"${df_to_save['Close'].min():.2f}",
+                f"{df_to_save['Daily_returns'].mean():.4f}",
+                f"{df_to_save['RSI'].iloc[-1]:.2f}",
+                'BUY' if df_to_save['Signal'].iloc[-1] == 1 else 'SELL' if df_to_save['Signal'].iloc[-1] == -1 else 'HOLD',
+                df_to_save['Price_Action'].iloc[-1]
+            ]
+        }
+        summary_df = pd.DataFrame(summary_data)
+        summary_df.to_excel(writer, sheet_name='Summary', index=False)
+
+        stats_data = {
+            'Statistic': [
+                'Mean Close Price',
+                'Median Close Price',
+                'Std Deviation Close',
+                'Mean Daily Return',
+                'Std Deviation Daily Return',
+                'Max Daily Return',
+                'Min Daily Return',
+                'Current Volatility',
+                'Mean RSI',
+                'Bullish Days',
+                'Bearish Days',
+                'Neutral Days'
+            ],
+            'Value': [
+                f"${df_to_save['Close'].mean():.2f}",
+                f"${df_to_save['Close'].median():.2f}",
+                f"${df_to_save['Close'].std():.2f}",
+                f"{df_to_save['Daily_returns'].mean():.6f}",
+                f"{df_to_save['Daily_returns'].std():.6f}",
+                f"{df_to_save['Daily_returns'].max():.6f}",
+                f"{df_to_save['Daily_returns'].min():.6f}",
+                f"{df_to_save['Volatility'].iloc[-1]:.6f}",
+                f"{df_to_save['RSI'].mean():.2f}",
+                len(df_to_save[df_to_save['Price_Action'] == 'Bullish']),
+                len(df_to_save[df_to_save['Price_Action'] == 'Bearish']),
+                len(df_to_save[df_to_save['Price_Action'] == 'Neutral'])
+            ]
+        }
+        stats_df = pd.DataFrame(stats_data)
+        stats_df.to_excel(writer, sheet_name='Statistics', index=False)
+
+        recent_df = df_to_save.tail(30)
+        recent_df.to_excel(writer, sheet_name='Recent Data', index=False)
+
+        signals_data = {
+            'Date': df_to_save['Date'],
+            'Close': df_to_save['Close'],
+            'Signal Score': df_to_save['Signal Score'],
+            'Signal': df_to_save['Signal'],
+            'Price Action': df_to_save['Price_Action']
+        }
+        signals_df = pd.DataFrame(signals_data)
+        signals_df.to_excel(writer, sheet_name='Signals', index=False)
+
+    print(f"\n✅ Enhanced Excel file successfully saved to '{excel_filename}'")
+    print(f"   📊 The file contains {len(df_to_save)} rows of data")
+    print(f"   📑 Sheets included:")
+    print(f"      - 'Stock Data': All data ({len(df_to_save)} rows)")
+    print(f"      - 'Summary': Key metrics overview")
+    print(f"      - 'Statistics': Statistical analysis")
+    print(f"      - 'Recent Data': Last 30 days")
+    print(f"      - 'Signals': Buy/Sell signals summary")
+
+except Exception as e:
+    print(f"❌ Error saving enhanced Excel: {e}")
+    try:
+        df_to_save.to_excel(excel_filename, index=False, sheet_name='Stock Data')
+        print(f"✅ Data saved to '{excel_filename}' (simple format)")
+    except Exception as e2:
+        print(f"❌ Also failed to save: {e2}")
+
+print(f"File saved at: {os.path.abspath(excel_filename)}")
+files.download(excel_filename)
